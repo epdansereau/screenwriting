@@ -178,23 +178,23 @@ class Screenplay(BaseModel):
 
     @classmethod
     def from_fdx(cls, file_path: str) -> "Screenplay":
-        def extract_text_elements(element: ET.Element) -> List[Tuple[str, Optional[str]]]:
+        def extract_text_elements(element: ET.Element) -> List[TextElement]:
             """Extract text and style elements from a Paragraph element."""
-            text_elements = []
+            text_elements: List[TextElement] = []
             buffer = ''
             last_style = None
 
             for text_elem in element.findall('Text'):
                 text = text_elem.text or ''
-                style = text_elem.get('Style', '')
+                style = text_elem.get('Style', '') or None
                 if style != last_style and buffer:
-                    text_elements.append((buffer, last_style))
+                    text_elements.append(TextElement(text=buffer, style=last_style))
                     buffer = ''
                 buffer += text
                 last_style = style
 
             if buffer:
-                text_elements.append((buffer, last_style))
+                text_elements.append(TextElement(text=buffer, style=last_style))
 
             return text_elements
         
@@ -218,7 +218,7 @@ class Screenplay(BaseModel):
                         cls._safe_add_scene(screenplay, current_scene)
                     current_scene = [Paragraph(
                         type="Scene Heading",
-                        text_elements=to_text_elements(extract_text_elements(element))
+                        text_elements=extract_text_elements(element)
                     )]
 
                 elif dual_dialogue is not None:
@@ -227,14 +227,14 @@ class Screenplay(BaseModel):
                         sub_type = sub_element.get('Type')
                         dual.append(Paragraph(
                             type=sub_type,
-                            text_elements=to_text_elements(extract_text_elements(sub_element))
+                            text_elements=extract_text_elements(sub_element)
                         ))
                     current_scene.append(DualDialogue(paragraphs=dual))
 
                 else:
                     current_scene.append(Paragraph(
                         type=para_type,
-                        text_elements=to_text_elements(extract_text_elements(element))
+                        text_elements=extract_text_elements(element)
                     ))
 
             if current_scene:
@@ -269,9 +269,9 @@ class Screenplay(BaseModel):
         current_scene: List[Paragraph] = []
         previous_type = None
 
-        def parse_markdown(text: str, markdown: bool = True) -> List[Tuple[str, Optional[str]]]:
+        def parse_markdown(text: str, markdown: bool = True) -> List[TextElement]:
             if not markdown:
-                return [(text, None)]
+                return [TextElement(text=text)]
 
             markdown_patterns = [
                 (r'\*\*\*~~__([^_~*]+?)__~~\*\*\*', 'Bold+Italic+Underline+Strikeout'),
@@ -291,7 +291,7 @@ class Screenplay(BaseModel):
                 (r'~~([^~]+?)~~', 'Strikeout'),
             ]
 
-            parts: List[Tuple[str, Optional[str]]] = []
+            elements: List[TextElement] = []
             text_remaining = text
 
             while text_remaining:
@@ -300,15 +300,16 @@ class Screenplay(BaseModel):
                     if match:
                         start, end = match.span()
                         if start > 0:
-                            parts.append((text_remaining[:start], None))
-                        parts.append((match.group(1), style))
+                            elements.append(TextElement(text=text_remaining[:start]))
+                        elements.append(TextElement(text=match.group(1), style=style))
                         text_remaining = text_remaining[end:]
                         break
                 else:
-                    parts.append((text_remaining, None))
+                    elements.append(TextElement(text=text_remaining))
                     break
 
-            return parts
+            return elements
+
 
         def convert_dual_dialogues(paragraphs: List[Paragraph]) -> List[Union[Paragraph, DualDialogue]]:
             updated = []
@@ -338,9 +339,6 @@ class Screenplay(BaseModel):
                 updated.append(paragraphs[i])
                 i += 1
             return updated    
-
-        def parsed(text: str) -> List[TextElement]:
-            return to_text_elements(parse_markdown(text, markdown))
         
         def normalize_characters(paragraphs: List[Paragraph]):
             for i in range(len(paragraphs)):
@@ -358,31 +356,31 @@ class Screenplay(BaseModel):
                     normalize_characters(current_scene)
                     paragraphs = convert_dual_dialogues(current_scene)
                     screenplay.add_scene(Scene(paragraphs=paragraphs))
-                current_scene = [Paragraph(type="Scene Heading", text_elements=parsed(line))]
+                current_scene = [Paragraph(type="Scene Heading", text_elements=parse_markdown(line, markdown))]
                 previous_type = "Scene Heading"
             elif line.startswith('@') and markdown:
-                current_scene.append(Paragraph(type="Character", text_elements=parsed(line[1:])))
+                current_scene.append(Paragraph(type="Character", text_elements=parse_markdown(line[1:], markdown)))
                 previous_type = "Character"
             elif line.startswith('!') and markdown:
-                current_scene.append(Paragraph(type="Action", text_elements=parsed(line[1:])))
+                current_scene.append(Paragraph(type="Action", text_elements=parse_markdown(line[1:], markdown)))
                 previous_type = "Action"
             elif line.startswith('>') and markdown:
-                current_scene.append(Paragraph(type="Transition", text_elements=parsed(line[1:])))
+                current_scene.append(Paragraph(type="Transition", text_elements=parse_markdown(line[1:], markdown)))
                 previous_type = "Transition"
             elif line.startswith('(') and line.endswith(')'):
-                current_scene.append(Paragraph(type="Parenthetical", text_elements=parsed(line)))
+                current_scene.append(Paragraph(type="Parenthetical", text_elements=parse_markdown(line, markdown)))
                 previous_type = "Parenthetical"
             elif line.isupper() and line.endswith(':'):
-                current_scene.append(Paragraph(type="Transition", text_elements=parsed(line)))
+                current_scene.append(Paragraph(type="Transition", text_elements=parse_markdown(line, markdown)))
                 previous_type = "Transition"
             elif line.isupper():
-                current_scene.append(Paragraph(type="Character", text_elements=parsed(line)))
+                current_scene.append(Paragraph(type="Character", text_elements=parse_markdown(line, markdown)))
                 previous_type = "Character"
             elif previous_type in {"Character", "Parenthetical"} and not line.startswith('^'):
-                current_scene.append(Paragraph(type="Dialogue", text_elements=parsed(line)))
+                current_scene.append(Paragraph(type="Dialogue", text_elements=parse_markdown(line, markdown)))
                 previous_type = "Dialogue"
             else:
-                current_scene.append(Paragraph(type="Action", text_elements=parsed(line)))
+                current_scene.append(Paragraph(type="Action", text_elements=parse_markdown(line, markdown)))
                 previous_type = "Action"
 
         if current_scene:
@@ -392,15 +390,7 @@ class Screenplay(BaseModel):
 
         return screenplay
 
-def to_text_elements(pairs: List[Tuple[str, Optional[str]]]) -> List[TextElement]:
-    for item in pairs:
-        if not isinstance(item, tuple) or not isinstance(item[0], str):
-            raise ValueError(f"Invalid item in parse_markdown output: {item}")
-    return [TextElement(text=t, style=s) for (t, s) in pairs]
-
-
 if __name__ == "__main__":
-    #input_fdx_file_path = "scènes intrigue B S.fdx"
     input_fdx_file_path = "example.fdx"
     output_text_file_path_markdown = "example_script_markdown.txt"
     output_text_file_path_plain = "example_script_plain.txt"
