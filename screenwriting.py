@@ -122,6 +122,12 @@ class Scene(BaseModel):
             previous_type = current_type
 
         return '\n'.join(scene_content)
+    
+    def add_paragraph(self, paragraph: Paragraph):
+        self.paragraphs.append(paragraph)
+
+    def add_dualdialogue(self, dual: DualDialogue):
+        self.paragraphs.append(dual)
 
 
 class Screenplay(BaseModel):
@@ -179,7 +185,6 @@ class Screenplay(BaseModel):
     @classmethod
     def from_fdx(cls, file_path: str) -> "Screenplay":
         def extract_text_elements(element: ET.Element) -> List[TextElement]:
-            """Extract text and style elements from a Paragraph element."""
             text_elements: List[TextElement] = []
             buffer = ''
             last_style = None
@@ -197,14 +202,14 @@ class Screenplay(BaseModel):
                 text_elements.append(TextElement(text=buffer, style=last_style))
 
             return text_elements
-        
+
         tree = ET.parse(file_path)
         root = tree.getroot()
 
         screenplay = cls()
         content = root.find('Content')
+        current_scene = Scene(paragraphs=[])
 
-        current_scene: List[Union[Paragraph, DualDialogue]] = []
         if content is not None:
             for element in content:
                 if element.tag != 'Paragraph':
@@ -214,12 +219,13 @@ class Screenplay(BaseModel):
                 dual_dialogue = element.find('DualDialogue')
 
                 if para_type == "Scene Heading":
-                    if current_scene:
-                        cls._safe_add_scene(screenplay, current_scene)
-                    current_scene = [Paragraph(
+                    if current_scene.paragraphs:
+                        screenplay.add_scene(current_scene)
+                    current_scene = Scene(paragraphs=[])
+                    current_scene.add_paragraph(Paragraph(
                         type="Scene Heading",
                         text_elements=extract_text_elements(element)
-                    )]
+                    ))
 
                 elif dual_dialogue is not None:
                     dual = []
@@ -229,16 +235,16 @@ class Screenplay(BaseModel):
                             type=sub_type,
                             text_elements=extract_text_elements(sub_element)
                         ))
-                    current_scene.append(DualDialogue(paragraphs=dual))
+                    current_scene.add_dualdialogue(DualDialogue(paragraphs=dual))
 
                 else:
-                    current_scene.append(Paragraph(
+                    current_scene.add_paragraph(Paragraph(
                         type=para_type,
                         text_elements=extract_text_elements(element)
                     ))
 
-            if current_scene:
-                cls._safe_add_scene(screenplay, current_scene)
+            if current_scene.paragraphs:
+                screenplay.add_scene(current_scene)
 
             # Extract metadata
             metadata_start = list(root).index(content) + 1
@@ -246,16 +252,6 @@ class Screenplay(BaseModel):
             screenplay.set_metadata(metadata_elements)
 
         return screenplay
-
-
-    @staticmethod
-    def _safe_add_scene(screenplay: "Screenplay", current_scene):
-        try:
-            screenplay.add_scene(Scene(paragraphs=current_scene))
-        except Exception as e:
-            print("\n⛔️ Failed to create Scene with the following data:\n")
-            pprint(current_scene)
-            raise e
         
     @classmethod
     def from_plain(cls, file_path: str, markdown: bool = True) -> "Screenplay":
@@ -418,3 +414,4 @@ if __name__ == "__main__":
     print(f"Script has been saved as text with markdown to {output_text_file_path_markdown}")
     print(f"Script has been saved as text without markdown to {output_text_file_path_plain}")
     print(f"Script has been recreated as FDX to {output_fdx_file_path}")
+
