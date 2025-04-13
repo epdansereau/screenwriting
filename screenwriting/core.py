@@ -1,11 +1,9 @@
 from pydantic import BaseModel, Field,  ConfigDict
-from typing import List, Tuple, Optional, Union
+from typing import List, Optional, Union
 import xml.etree.ElementTree as ET
 import xml.dom.minidom as minidom
 import re
 import json
-
-from pprint import pprint
 
 class TextElement(BaseModel):
     text: str
@@ -179,9 +177,9 @@ class Screenplay(BaseModel):
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(self._save_as_fdx())
 
-    def save_as_text(self, file_path: str, markdown=True):
+    def save_as_text(self, file_path: str, spacing=True, markdown=True):
         with open(file_path, "w", encoding="utf-8") as f:
-            f.write(self.write_screenplay(spacing=True, markdown=markdown))
+            f.write(self.write_screenplay(spacing=spacing, markdown=markdown))
 
     def save_as_json(self, file_path: str):
         def serialize_text_element(te: TextElement):
@@ -213,6 +211,44 @@ class Screenplay(BaseModel):
 
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(screenplay_data, f, indent=2, ensure_ascii=False)
+
+    @classmethod
+    def from_json(cls, file_path: str) -> "Screenplay":
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return cls._from_json(data)
+
+    @classmethod
+    def _from_json(cls, data: dict) -> "Screenplay":
+        def deserialize_text_element(te_data: dict) -> TextElement:
+            return TextElement(text=te_data["text"], style=te_data.get("style"))
+
+        def deserialize_paragraph(p_data: dict) -> Paragraph:
+            return Paragraph(
+                type=p_data["type"],
+                text_elements=[deserialize_text_element(te) for te in p_data["text_elements"]]
+            )
+
+        def deserialize_dual_dialogue(dd_data: dict) -> DualDialogue:
+            return DualDialogue(
+                paragraphs=[deserialize_paragraph(p) for p in dd_data["dual_dialogue"]]
+            )
+
+        def deserialize_scene(scene_data: dict) -> Scene:
+            paragraphs = []
+            for p in scene_data["paragraphs"]:
+                if "dual_dialogue" in p:
+                    paragraphs.append(deserialize_dual_dialogue(p))
+                else:
+                    paragraphs.append(deserialize_paragraph(p))
+            return Scene(paragraphs=paragraphs)
+
+        screenplay = cls()
+        for scene_data in data.get("scenes", []):
+            screenplay.add_scene(deserialize_scene(scene_data))
+
+        return screenplay
+
 
     @classmethod
     def from_fdx(cls, file_path: str) -> "Screenplay":
