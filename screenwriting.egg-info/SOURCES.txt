@@ -1,0 +1,9 @@
+pyproject.toml
+setup.py
+screenwriting/__init__.py
+screenwriting/core.py
+screenwriting.egg-info/PKG-INFO
+screenwriting.egg-info/SOURCES.txt
+screenwriting.egg-info/dependency_links.txt
+screenwriting.egg-info/requires.txt
+screenwriting.egg-info/top_level.txt
