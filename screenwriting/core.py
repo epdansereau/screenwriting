@@ -328,7 +328,7 @@ class Screenplay(BaseModel):
         return cls._from_lines(lines, markdown)
 
     @classmethod
-    def _from_lines(cls, lines: List[str], markdown: bool = True, allow_fountain: bool = True, clean_spacing: bool = True) -> "Screenplay":
+    def _from_lines(cls, lines: List[str], markdown: bool = True, allow_fountain: bool = True, clean_spacing: bool = True, clean_paging: bool = True) -> "Screenplay":
         screenplay = cls()
         current_scene: List[Paragraph] = []
         previous_type = None
@@ -350,8 +350,20 @@ class Screenplay(BaseModel):
                     cleaned[-1] = cleaned[-1].rstrip() + ' ' + stripped
                 else:
                     cleaned.append(stripped if indent == '' else line)
-                    prev_indent = indent if indent else None
+                    prev_indent = indent
 
+            return cleaned
+        
+
+        def _clean_paging(lines: List[str]) -> List[str]:
+            cleaned = []
+            pattern = re.compile(r'^\s*(?:p\.\s*|PAGE\s*|page\s*)?\d{1,3}\s*$')
+
+            for line in lines:
+                if pattern.match(line.strip()):
+                    continue
+                cleaned.append(line)
+                
             return cleaned
 
         def parse_markdown(text: str, markdown: bool = True) -> List[TextElement]:
@@ -434,6 +446,9 @@ class Screenplay(BaseModel):
         if clean_spacing:
             lines = _clean_spacing(lines)
 
+        if clean_paging:
+            lines = _clean_paging(lines)
+
         for line in lines:
             line = line.strip()
             if not line:
@@ -443,7 +458,7 @@ class Screenplay(BaseModel):
             line_no_number = re.sub(r'^\s*\d+[A-Z]?[\.\s-]+', '', line)
 
             # Match potential scene headings
-            if re.match(r'^(INT|EXT|INTERIOR|EXTERIOR)[\s\./:-]', line_no_number) or (re.match(r'^\.(?!\.)', line) and allow_fountain):
+            if re.match(r'^(INT|EXT|INTERIOR|EXTERIOR|I\./E|I/E)[\s\./:-]', line_no_number) or (re.match(r'^\.(?!\.)', line) and allow_fountain):
                 if current_scene:
                     normalize_characters(current_scene)
                     paragraphs = convert_dual_dialogues(current_scene)
