@@ -298,16 +298,21 @@ class Screenplay(BaseModel):
                 elif dual_dialogue is not None:
                     dual = []
                     for sub_element in dual_dialogue:
-                        sub_type = sub_element.get('Type')
+                        if sub_element.tag != 'Paragraph':
+                            # Ignore non-paragraph artefacts (e.g., SpellCheckIgnoreLists)
+                            continue
+                        sub_type = sub_element.get('Type') or 'Action'
                         dual.append(Paragraph(
                             type=sub_type,
                             text_elements=extract_text_elements(sub_element)
                         ))
-                    current_scene.add_dualdialogue(DualDialogue(paragraphs=dual))
+                    if dual:
+                        current_scene.add_dualdialogue(DualDialogue(paragraphs=dual))
 
                 else:
+                    fallback_type = para_type or 'Action'
                     current_scene.add_paragraph(Paragraph(
-                        type=para_type,
+                        type=fallback_type,
                         text_elements=extract_text_elements(element)
                     ))
 
